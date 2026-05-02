@@ -1,0 +1,5 @@
+msg,blinks_count,blinks_total_duration,blinks_avg_duration,blinks_median_duration,center_fixations_count,center_fixations_duration,center_fixations_avg_duration,center_fixations_median_duration,total_duration,center_fixations_percentage,blinks_percentage
+0,42,8810.0,209.76190476190476,92.0,115,69794.0,606.9043478260869,102.0,190442.0,38.426048273431995,4.626080381428467
+1,11,3298.0,299.8181818181818,74.0,18,10784.0,599.1111111111111,556.0,20000.0,64.56711771045384,16.49
+2,1,662.0,662.0,662.0,2,1284.0,642.0,676.0,2504.0,69.70684039087948,26.437699680511184
+3,1,1000.0,1000.0,1000.0,0,0,-1,-1,1000.0,0,100.0
