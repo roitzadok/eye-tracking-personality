@@ -1,5 +1,5 @@
-msg,blinks_count,blinks_total_duration,blinks_avg_duration,blinks_median_duration,center_fixations_count,center_fixations_duration,center_fixations_avg_duration,center_fixations_median_duration,total_duration,center_fixations_percentage,blinks_percentage
-0,42,8810.0,209.76190476190476,92.0,115,69794.0,606.9043478260869,102.0,190442.0,38.426048273431995,4.626080381428467
-1,11,3298.0,299.8181818181818,74.0,18,10784.0,599.1111111111111,556.0,20000.0,64.56711771045384,16.49
-2,1,662.0,662.0,662.0,2,1284.0,642.0,676.0,2504.0,69.70684039087948,26.437699680511184
-3,1,1000.0,1000.0,1000.0,0,0,-1,-1,1000.0,0,100.0
+msg,blinks_count,blinks_total_duration,blinks_avg_duration,blinks_median_duration,center_dwell_count,center_dwell_duration,center_dwell_avg_duration,center_dwell_median_duration,dispersion_fixations_count,dispersion_fixations_duration,dispersion_fixations_avg_duration,dispersion_fixations_median_duration,center_dispersion_fixations_count,center_dispersion_fixations_duration,center_dispersion_fixations_avg_duration,center_dispersion_fixations_median_duration,saccades_count,saccades_avg_velocity,saccades_median_velocity,total_duration,center_dwell_percentage,dispersion_fixations_percentage,center_dispersion_fixations_percentage,blinks_percentage
+0,42,8810.0,209.76190476190476,92.0,115,69794.0,606.9043478260869,102.0,236,89468.0,379.10169491525426,306.0,165,64986.0,393.8545454545455,320.0,541,4226.040782982466,2791.6666666666665,190442.0,38.426048273431995,49.257840028188866,35.7789376321353,4.626080381428467
+1,11,3298.0,299.8181818181818,74.0,18,10784.0,599.1111111111111,556.0,46,14808.0,321.9130434782609,284.0,31,10186.0,328.5806451612903,272.0,106,4917.071135074967,3075.000000000017,20000.0,64.56711771045384,88.66004071368698,60.98670817866124,16.49
+2,1,662.0,662.0,662.0,2,1284.0,642.0,676.0,5,1450.0,290.0,194.0,3,1124.0,374.6666666666667,476.0,10,4847.991929429435,3300.0000000000114,2504.0,69.70684039087948,78.71878393051031,61.020629750271446,26.437699680511184
+3,1,1000.0,1000.0,1000.0,0,0,-1,-1,0,0,-1,-1,0,0,-1,-1,0,-1,-1,1000.0,0,0,0,100.0

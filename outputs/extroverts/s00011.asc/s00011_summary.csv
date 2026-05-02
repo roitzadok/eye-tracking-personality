@@ -1,5 +1,5 @@
-msg,blinks_count,blinks_total_duration,blinks_avg_duration,blinks_median_duration,center_fixations_count,center_fixations_duration,center_fixations_avg_duration,center_fixations_median_duration,total_duration,center_fixations_percentage,blinks_percentage
-0,40,20618.0,515.45,88.0,65,2648.0,40.738461538461536,4.0,385184.0,0.7263431038549947,5.352766470050677
-1,11,9088.0,826.1818181818181,126.0,20,1198.0,59.9,8.0,20000.0,10.978739002932551,45.440000000000005
-2,12,16412.0,1367.6666666666667,70.0,36,246.0,6.833333333333333,6.0,55054.0,0.6366130117488743,29.810731282014025
-3,1,1002.0,1002.0,1002.0,0,0,-1,-1,1002.0,0,100.0
+msg,blinks_count,blinks_total_duration,blinks_avg_duration,blinks_median_duration,center_dwell_count,center_dwell_duration,center_dwell_avg_duration,center_dwell_median_duration,dispersion_fixations_count,dispersion_fixations_duration,dispersion_fixations_avg_duration,dispersion_fixations_median_duration,center_dispersion_fixations_count,center_dispersion_fixations_duration,center_dispersion_fixations_avg_duration,center_dispersion_fixations_median_duration,saccades_count,saccades_avg_velocity,saccades_median_velocity,total_duration,center_dwell_percentage,dispersion_fixations_percentage,center_dispersion_fixations_percentage,blinks_percentage
+0,40,20618.0,515.45,88.0,65,2648.0,40.738461538461536,4.0,158,52358.0,331.37974683544303,270.0,7,1396.0,199.42857142857142,206.0,631,4721.408742815171,2699.999999999932,385184.0,0.7263431038549947,14.361734226450078,0.38292106230421924,5.352766470050677
+1,11,9088.0,826.1818181818181,126.0,20,1198.0,59.9,8.0,35,9044.0,258.4,236.0,4,682.0,170.5,178.0,73,9406.355779122548,5239.999999999997,20000.0,10.978739002932551,82.88123167155426,6.25,45.440000000000005
+2,12,16412.0,1367.6666666666667,70.0,36,246.0,6.833333333333333,6.0,89,35066.0,394.0,340.0,0,0,-1,-1,195,5982.477385015873,3166.6666666666665,55054.0,0.6366130117488743,90.7458206096993,0.0,29.810731282014025
+3,1,1002.0,1002.0,1002.0,0,0,-1,-1,0,0,-1,-1,0,0,-1,-1,0,-1,-1,1002.0,0,0,0,100.0

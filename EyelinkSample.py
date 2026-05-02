@@ -2,6 +2,7 @@ import re
 import os
 import csv
 from enum import Enum
+from engbert_func_fixed_deg import EngbertDetector
 
 SCREEN_CENTER_X = 962 #1920 / 2
 SCREEN_CENTER_Y = 457 #1080 / 2
@@ -65,6 +66,18 @@ class Frame(object):
     def is_blink(self):
         return self.left_eye_x is None and self.right_eye_x is None
 
+    @property
+    def gaze_x(self):
+        if self.left_eye_x is not None and self.right_eye_x is not None:
+            return (self.left_eye_x + self.right_eye_x) / 2
+        return self.left_eye_x if self.left_eye_x is not None else self.right_eye_x
+
+    @property
+    def gaze_y(self):
+        if self.left_eye_y is not None and self.right_eye_y is not None:
+            return (self.left_eye_y + self.right_eye_y) / 2
+        return self.left_eye_y if self.left_eye_y is not None else self.right_eye_y
+
     @staticmethod
     def __is_point_inside_square(point_x, point_y, square_center_x, square_center_y, square_radius) -> bool:
         return (square_center_x - square_radius) <= point_x <= (square_center_x + square_radius) and (
@@ -72,6 +85,10 @@ class Frame(object):
 
     @staticmethod
     def __is_point_inside_circle(point_x, point_y, circle_center_x, circle_center_y, circle_radius):
+        return (point_x - circle_center_x) ** 2 + (point_y - circle_center_y) ** 2 <= circle_radius ** 2
+
+    @staticmethod
+    def is_point_inside_circle(point_x, point_y, circle_center_x, circle_center_y, circle_radius):
         return (point_x - circle_center_x) ** 2 + (point_y - circle_center_y) ** 2 <= circle_radius ** 2
 
     def is_in_circle(self, center_x, center_y, r):
@@ -232,7 +249,7 @@ class CsvEyelinkSample(EyelinkSample):
 
         return blinks
 
-    def get_fixations_in_area(self, x: float, y: float, r: float) -> list:
+    def get_area_dwell_periods(self, x: float, y: float, r: float) -> list:
         fixations = []
         was_last_frame_in_area = False
         for frame in self.parsed:
@@ -257,10 +274,156 @@ class CsvEyelinkSample(EyelinkSample):
 
         return fixations
 
+    def get_dispersion_fixations(self, max_dispersion_px: float = 50.0, min_duration_ms: float = 100.0) -> list:
+        fixations = []
+        window = []
+
+        def window_dispersion(frames):
+            xs = [f.gaze_x for f in frames]
+            ys = [f.gaze_y for f in frames]
+            return (max(xs) - min(xs)) + (max(ys) - min(ys))
+
+        def window_duration(frames):
+            return frames[-1].time - frames[0].time
+
+        for frame in self.parsed:
+            if frame.gaze_x is None or frame.gaze_y is None:
+                if len(window) >= 2 and window_duration(window) >= min_duration_ms:
+                    fixations.append(Fixation(window[0].time, window[-1].time))
+                window = []
+                continue
+
+            window.append(frame)
+
+            if window_dispersion(window) > max_dispersion_px:
+                if len(window) >= 2:
+                    candidate = window[:-1]
+                    if len(candidate) >= 2 and window_duration(candidate) >= min_duration_ms:
+                        fixations.append(Fixation(candidate[0].time, candidate[-1].time))
+                window = [frame]
+
+        if len(window) >= 2 and window_duration(window) >= min_duration_ms:
+            fixations.append(Fixation(window[0].time, window[-1].time))
+
+        return fixations
+
+    def get_center_dispersion_fixations(
+        self,
+        max_dispersion_px: float = 50.0,
+        min_duration_ms: float = 100.0,
+        center_x: float = SCREEN_CENTER_X,
+        center_y: float = SCREEN_CENTER_Y,
+        r: float = SCREEN_CENTER_R,
+    ) -> list:
+        fixations = []
+        dispersion_fixations = self.get_dispersion_fixations(max_dispersion_px=max_dispersion_px, min_duration_ms=min_duration_ms)
+        for fixation in dispersion_fixations:
+            frames = [frame for frame in self.parsed if fixation.start <= frame.time <= fixation.end]
+            if not frames:
+                continue
+
+            valid_x = [frame.gaze_x for frame in frames if frame.gaze_x is not None]
+            valid_y = [frame.gaze_y for frame in frames if frame.gaze_y is not None]
+            if not valid_x or not valid_y:
+                continue
+
+            mean_x = sum(valid_x) / len(valid_x)
+            mean_y = sum(valid_y) / len(valid_y)
+            if Frame.is_point_inside_circle(mean_x, mean_y, center_x, center_y, r):
+                fixations.append(fixation)
+
+        return fixations
+
+    def get_saccades(self) -> list:
+        """
+        Detect saccades using Engbert's velocity-based detector.
+        Sampling rate is calculated from the first two timestamps.
+        Returns list of dicts with 'start_time', 'end_time', 'velocity_px_s'
+        """
+        import numpy as np
+
+        frames = self.parsed
+        if len(frames) < 2:
+            return []
+
+        # Calculate sampling rate from first two timestamps (in microseconds)
+        time_diff_us = frames[1].time - frames[0].time
+        if time_diff_us <= 0:
+            return []
+        sampling_rate = 1_000_000.0 / time_diff_us  # Hz
+
+        t = np.array([f.time for f in frames])
+        x = np.array([f.gaze_x if f.gaze_x is not None else np.nan for f in frames])
+        y = np.array([f.gaze_y if f.gaze_y is not None else np.nan for f in frames])
+
+        # Remove NaN frames for detection
+        valid = ~np.isnan(x) & ~np.isnan(y)
+        if not np.any(valid):
+            return []
+
+        t_valid = t[valid]
+        x_valid = x[valid]
+        y_valid = y[valid]
+
+        detector = EngbertDetector(
+            missing_value=np.nan,
+            min_event_duration=10,  # ms
+            pad_blinks_ms=0
+        )
+        detector._sr = sampling_rate
+
+        labels, _ = detector.detect(t_valid, x_valid, y_valid, viewer_distance_cm=60, pixel_size_cm=0.024)
+
+        saccades = []
+        current_saccade = None
+        for i, label in enumerate(labels):
+            if label == "saccade":
+                if current_saccade is None:
+                    current_saccade = {"start": i, "end": i}
+                else:
+                    current_saccade["end"] = i
+            else:
+                if current_saccade is not None:
+                    # Calculate velocity
+                    start_idx = current_saccade["start"]
+                    end_idx = current_saccade["end"]
+                    if end_idx > start_idx:
+                        dx = x_valid[end_idx] - x_valid[start_idx]
+                        dy = y_valid[end_idx] - y_valid[start_idx]
+                        distance = np.sqrt(dx**2 + dy**2)
+                        duration_s = (t_valid[end_idx] - t_valid[start_idx]) / 1_000_000.0  # microseconds to seconds
+                        if duration_s > 0:
+                            velocity = distance / duration_s
+                            saccades.append({
+                                "start_time": t_valid[start_idx],
+                                "end_time": t_valid[end_idx],
+                                "velocity_px_s": velocity
+                            })
+                    current_saccade = None
+
+        # Handle last saccade
+        if current_saccade is not None:
+            start_idx = current_saccade["start"]
+            end_idx = current_saccade["end"]
+            if end_idx > start_idx:
+                dx = x_valid[end_idx] - x_valid[start_idx]
+                dy = y_valid[end_idx] - y_valid[start_idx]
+                distance = np.sqrt(dx**2 + dy**2)
+                duration_s = (t_valid[end_idx] - t_valid[start_idx]) / 1_000_000.0
+                if duration_s > 0:
+                    velocity = distance / duration_s
+                    saccades.append({
+                        "start_time": t_valid[start_idx],
+                        "end_time": t_valid[end_idx],
+                        "velocity_px_s": velocity
+                    })
+
+        return saccades
+
     def get_statistics(self) -> dict:
         statistics = {}
         blinks = self.get_blinks()
-        center_fixations = self.get_fixations_in_area(SCREEN_CENTER_X, SCREEN_CENTER_Y, SCREEN_CENTER_R)
+        center_dwell_periods = self.get_area_dwell_periods(SCREEN_CENTER_X, SCREEN_CENTER_Y, SCREEN_CENTER_R)
         # statistics['blinks'] = blinks
         statistics['blinks_count'] = len(blinks)
         statistics['blinks_total_duration'] = sum(list(map(lambda fixation: fixation.duration, blinks)))
@@ -271,24 +434,58 @@ class CsvEyelinkSample(EyelinkSample):
         else:
             statistics['blinks_avg_duration'] = -1
             statistics['blinks_median_duration'] = -1
-        # statistics['center_fixations'] = center_fixations
-        statistics['center_fixations_count'] = len(center_fixations)
-        statistics['center_fixations_duration'] = sum(list(map(lambda fixation: fixation.duration, center_fixations)))
-        if len(center_fixations) != 0:
-            statistics['center_fixations_avg_duration'] = statistics['center_fixations_duration'] / len(
-                center_fixations)
-            statistics['center_fixations_median_duration'] = \
-                sorted(list(map(lambda fixation: fixation.duration, center_fixations)))[len(center_fixations) // 2]
+
+        statistics['center_dwell_count'] = len(center_dwell_periods)
+        statistics['center_dwell_duration'] = sum(list(map(lambda fixation: fixation.duration, center_dwell_periods)))
+        if len(center_dwell_periods) != 0:
+            statistics['center_dwell_avg_duration'] = statistics['center_dwell_duration'] / len(center_dwell_periods)
+            statistics['center_dwell_median_duration'] = sorted(list(map(lambda fixation: fixation.duration, center_dwell_periods)))[
+                len(center_dwell_periods) // 2]
         else:
-            statistics['center_fixations_avg_duration'] = -1
-            statistics['center_fixations_median_duration'] = -1
+            statistics['center_dwell_avg_duration'] = -1
+            statistics['center_dwell_median_duration'] = -1
+
+        dispersion_fixations = self.get_dispersion_fixations()
+        statistics['dispersion_fixations_count'] = len(dispersion_fixations)
+        statistics['dispersion_fixations_duration'] = sum(list(map(lambda fixation: fixation.duration, dispersion_fixations)))
+        if len(dispersion_fixations) != 0:
+            statistics['dispersion_fixations_avg_duration'] = statistics['dispersion_fixations_duration'] / len(dispersion_fixations)
+            statistics['dispersion_fixations_median_duration'] = sorted(list(map(lambda fixation: fixation.duration, dispersion_fixations)))[
+                len(dispersion_fixations) // 2]
+        else:
+            statistics['dispersion_fixations_avg_duration'] = -1
+            statistics['dispersion_fixations_median_duration'] = -1
+
+        center_dispersion_fixations = self.get_center_dispersion_fixations()
+        statistics['center_dispersion_fixations_count'] = len(center_dispersion_fixations)
+        statistics['center_dispersion_fixations_duration'] = sum(list(map(lambda fixation: fixation.duration, center_dispersion_fixations)))
+        if len(center_dispersion_fixations) != 0:
+            statistics['center_dispersion_fixations_avg_duration'] = statistics['center_dispersion_fixations_duration'] / len(center_dispersion_fixations)
+            statistics['center_dispersion_fixations_median_duration'] = sorted(list(map(lambda fixation: fixation.duration, center_dispersion_fixations)))[
+                len(center_dispersion_fixations) // 2]
+        else:
+            statistics['center_dispersion_fixations_avg_duration'] = -1
+            statistics['center_dispersion_fixations_median_duration'] = -1
+
+        saccades = self.get_saccades()
+        statistics['saccades_count'] = len(saccades)
+        if len(saccades) > 0:
+            velocities = [s['velocity_px_s'] for s in saccades]
+            statistics['saccades_avg_velocity'] = sum(velocities) / len(velocities)
+            statistics['saccades_median_velocity'] = sorted(velocities)[len(velocities) // 2]
+        else:
+            statistics['saccades_avg_velocity'] = -1
+            statistics['saccades_median_velocity'] = -1
+
         statistics['total_duration'] = self.parsed[-1].time - self.parsed[0].time
-        # no eye tracking data was found
         if statistics['total_duration'] == statistics['blinks_total_duration']:
-            statistics['center_fixations_percentage'] = 0
+            statistics['center_dwell_percentage'] = 0
+            statistics['dispersion_fixations_percentage'] = 0
+            statistics['center_dispersion_fixations_percentage'] = 0
         else:
-            statistics['center_fixations_percentage'] = statistics['center_fixations_duration'] / (statistics[
-                'total_duration'] - statistics['blinks_total_duration']) * 100
-        statistics['blinks_percentage'] = statistics['blinks_total_duration'] / statistics[
-            'total_duration'] * 100
+            non_blink_duration = statistics['total_duration'] - statistics['blinks_total_duration']
+            statistics['center_dwell_percentage'] = statistics['center_dwell_duration'] / non_blink_duration * 100
+            statistics['dispersion_fixations_percentage'] = statistics['dispersion_fixations_duration'] / non_blink_duration * 100
+            statistics['center_dispersion_fixations_percentage'] = statistics['center_dispersion_fixations_duration'] / non_blink_duration * 100
+        statistics['blinks_percentage'] = statistics['blinks_total_duration'] / statistics['total_duration'] * 100
         return statistics

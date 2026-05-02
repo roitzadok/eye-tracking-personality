@@ -47,9 +47,19 @@ def load_summary_messages(folder_path: str) -> pd.DataFrame:
 
     # Combine all files into one dataframe
     if dfs:
-        return pd.concat(dfs, ignore_index=True)
+        combined = pd.concat(dfs, ignore_index=True)
     else:
         return pd.DataFrame()  # return empty if no matching files found
+    
+    # Calculate per-second rates for all count columns
+    # total_duration is in milliseconds, convert to seconds
+    combined["total_duration_seconds"] = combined["total_duration"] / 1000.0
+    
+    count_cols = [col for col in combined.columns if col.endswith("_count")]
+    for col in count_cols:
+        combined[f"{col}_per_second"] = combined[col] / combined["total_duration_seconds"]
+    
+    return combined
 
 
 def merge_summary_files():
@@ -80,17 +90,17 @@ def clean_summary_participant() -> None:
 
 def create_brief_summary() -> None:
     """
-    Create a CSV with average and median center_fixations_percentage
+    Create a CSV with average and median center_dwell_percentage
     grouped by is_introvert and msg.
     """
     df = pd.read_csv(os.path.join(OUTPUTS_DIR, "summary.csv"))
 
     summary = (
         df
-            .groupby(["is_introvert", "msg"])["center_fixations_percentage"]
+            .groupby(["is_introvert", "msg"])["center_dwell_percentage"]
             .agg(
-            center_fixations_percentage_mean="mean",
-            center_fixations_percentage_median="median"
+            center_dwell_percentage_mean="mean",
+            center_dwell_percentage_median="median"
         )
             .reset_index()
             .sort_values(["is_introvert", "msg"])
@@ -138,7 +148,7 @@ def add_aq_scores_to_summary() -> None:
     merged.to_csv(SUMMARY_FILE, index=False)
 
 
-def plot_center_fixations_by_msg() -> None:
+def plot_center_dwell_by_msg() -> None:
     df = pd.read_csv(SUMMARY_FILE)
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
@@ -156,7 +166,7 @@ def plot_center_fixations_by_msg() -> None:
             ax.set_xlim(0, 40)
             ax.scatter(
                 group["participant"],
-                group["center_fixations_percentage"],
+                group["center_dwell_percentage"],
                 label=label,
                 color=color
             )
@@ -165,13 +175,13 @@ def plot_center_fixations_by_msg() -> None:
         ax.set_xlabel("Participant")
         ax.legend()
 
-    axes[0].set_ylabel("Center Fixations Percentage")
+    axes[0].set_ylabel("Center Dwell Percentage")
 
     plt.tight_layout()
     plt.show()
 
 
-def plot_center_fixation_bars() -> None:
+def plot_center_dwell_bars() -> None:
 
     df = pd.read_csv(SUMMARY_FILE)
 
@@ -183,7 +193,7 @@ def plot_center_fixation_bars() -> None:
             group = df[
                 (df["msg"] == msg) &
                 (df["is_introvert"] == intro)
-            ]["center_fixations_percentage"]
+            ]["center_dwell_percentage"]
 
             mean = group.mean()
             sem = group.std(ddof=1) / np.sqrt(len(group))
@@ -225,7 +235,7 @@ def plot_center_fixation_bars() -> None:
 
     ax.set_xticks(x)
     ax.set_xticklabels(["Part 1", "Part 2"])
-    ax.set_ylabel("Center Fixations (%)")
+    ax.set_ylabel("Center Dwell (%)")
     ax.set_xlabel("Experiment Part")
 
     ax.legend()
@@ -244,7 +254,7 @@ def run_mixed_model():
     df["A Score"] = df["A Score"].astype(float)
 
     model = smf.mixedlm(
-        "center_fixations_percentage ~ is_introvert * msg + Q('A Score')",
+        "center_dwell_percentage ~ is_introvert * msg + Q('A Score')",
         data=df,
         groups=df["participant"]
     )
@@ -270,7 +280,7 @@ def plot_participant_trajectories() -> None:
 
         ax.plot(
             group["msg"],
-            group["center_fixations_percentage"],
+            group["center_dwell_percentage"],
             marker="o",
             alpha=0.4,
             color=color
@@ -278,7 +288,7 @@ def plot_participant_trajectories() -> None:
 
     # Plot group means
     means = (
-        df.groupby(["msg", "is_introvert"])["center_fixations_percentage"]
+        df.groupby(["msg", "is_introvert"])["center_dwell_percentage"]
         .mean()
         .reset_index()
     )
@@ -291,7 +301,7 @@ def plot_participant_trajectories() -> None:
 
         ax.plot(
             group["msg"],
-            group["center_fixations_percentage"],
+            group["center_dwell_percentage"],
             marker="o",
             linewidth=3,
             color=color,
@@ -302,7 +312,7 @@ def plot_participant_trajectories() -> None:
     ax.set_xticklabels(["Part 1","Part 2"])
 
     ax.set_xlabel("Experiment Part")
-    ax.set_ylabel("Center Fixations (%)")
+    ax.set_ylabel("Center Dwell (%)")
 
     ax.legend()
 
@@ -315,10 +325,24 @@ def transform_csv_to_jasp_format():
     df = pd.read_csv(SUMMARY_FILE)
 
     cols_to_split = [
-        "center_fixations_percentage",
-        "center_fixations_count",
+        "center_dwell_percentage",
+        "center_dwell_count",
+        "center_dwell_count_per_second",
+        "center_dispersion_fixations_percentage",
+        "center_dispersion_fixations_count",
+        "center_dispersion_fixations_count_per_second",
+        "center_dispersion_fixations_duration",
+        "saccades_count",
+        "saccades_count_per_second",
+        "saccades_avg_velocity",
+        "saccades_median_velocity",
         "blinks_percentage",
-        "blinks_count"
+        "blinks_count",
+        "blinks_count_per_second",
+        "dispersion_fixations_percentage",
+        "dispersion_fixations_count",
+        "dispersion_fixations_count_per_second",
+        "dispersion_fixations_duration"
     ]
 
     participant_cols = [
@@ -326,12 +350,20 @@ def transform_csv_to_jasp_format():
         "is_introvert"
     ]
 
-    # Pivot repeated-measure variables
-    pivot_df = df.pivot_table(
+    # Ensure there is exactly one row per participant/msg combination
+    duplicate_rows = df[df.duplicated(subset=["participant", "msg"], keep=False)]
+    if not duplicate_rows.empty:
+        raise ValueError(
+            "Duplicate participant/msg combinations found in summary.csv. "
+            "JASP export expects exactly one row per participant and msg. "
+            "Please clean summary.csv before transforming."
+        )
+
+    # Pivot repeated-measure variables without altering values
+    pivot_df = df.pivot(
         index="participant",
         columns="msg",
-        values=cols_to_split,
-        aggfunc="mean"
+        values=cols_to_split
     )
 
     # Flatten multiindex columns
@@ -359,13 +391,13 @@ def transform_csv_to_jasp_format():
 
 def main():
     # analyze_folder(INTRO_INPUTS_DIR, INTRO_OUTPUTS_DIR)
-    analyze_folder(EXTRO_INPUTS_DIR, EXTRO_OUTPUTS_DIR)
+    # analyze_folder(EXTRO_INPUTS_DIR, EXTRO_OUTPUTS_DIR)
     merge_summary_files()
     clean_summary_participant()
     add_aq_scores_to_summary()
     create_brief_summary()
-    # plot_center_fixations_by_msg()
-    # plot_center_fixation_bars()
+    # plot_center_dwell_by_msg()
+    # plot_center_dwell_bars()
     # run_mixed_model()
     # plot_participant_trajectories()
     transform_csv_to_jasp_format()
